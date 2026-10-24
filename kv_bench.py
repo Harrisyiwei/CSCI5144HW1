@@ -6,11 +6,11 @@ Usage:
   python kv_bench.py get      # read + verify only, e.g. after restarting the server (durability)
 """
 import queue
-import json
 import sys
 import threading
 import time
-import urllib.request
+
+import requests
 
 BASE_URL = 'http://127.0.0.1:8000/kv'
 NUM_THREADS = 3
@@ -19,6 +19,7 @@ NUM_KEYS = NUM_THREADS * OPS_PER_THREAD   # keys per phase
 PRINT_INTERVAL = 3                        # seconds between intermediate reports
 MAX_LOGGED_PROBLEMS = 5                   # print the first few errors/mismatches, count the rest
 
+_local = threading.local()
 _log_lock = threading.Lock()
 _logged = 0
 
@@ -33,24 +34,27 @@ def log_problem(msg):
             print("  (further errors/mismatches suppressed; see counts in the results)")
 
 
+def session():
+    # One pooled connection per thread, so we time the store rather than TCP setup.
+    # requests.Session is not meant to be shared across threads.
+    if not hasattr(_local, 'session'):
+        _local.session = requests.Session()
+    return _local.session
+
+
 def kv_store_operation(op_type, key, value):
     """Returns 'ok', 'mismatch', or 'error'. For 'get', value is the expected value."""
     try:
         if op_type == 'set':
-            body = json.dumps({'value': value}).encode('utf-8')
-            request = urllib.request.Request(
-                f"{BASE_URL}/{key}",
-                data=body,
-                headers={'Content-Type': 'application/json'},
-                method='PUT',
+            r = session().put(
+                f"{BASE_URL}/{key}", json={'value': value}, timeout=30
             )
-            with urllib.request.urlopen(request, timeout=30):
-                pass
+            r.raise_for_status()
             return 'ok'
         if op_type == 'get':
-            request = urllib.request.Request(f"{BASE_URL}/{key}", method='GET')
-            with urllib.request.urlopen(request, timeout=30) as response:
-                got = json.load(response).get('value')
+            r = session().get(f"{BASE_URL}/{key}", timeout=30)
+            r.raise_for_status()
+            got = r.json().get('value')   # adjust if your server returns a different shape
             if got == value:
                 return 'ok'
             log_problem(f"Mismatch on get '{key}': expected {value!r}, got {got!r}")
@@ -157,5 +161,3 @@ if __name__ == '__main__':
     # Each successful request counts once: no multiplier.
     print(f"TOTAL: {total_ok} successful ops in {total_time:.2f}s "
           f"({total_ok / total_time:.1f} ops/s)")
-
- 

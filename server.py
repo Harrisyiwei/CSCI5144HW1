@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-"""Single-process, threaded HTTP key-value store; Python 3.9+."""
 import argparse
 import json
 import logging

@@ -12,7 +12,7 @@ import time
 
 import requests
 
-BASE_URL = 'http://127.0.0.1:8000/kv'
+BASE_URL = "http://127.0.0.1:8000/kv"
 NUM_THREADS = 3
 OPS_PER_THREAD = 100
 NUM_KEYS = NUM_THREADS * OPS_PER_THREAD   # keys per phase

@@ -2,3 +2,6 @@ __pycache__/
 data/
 logs/
 *.zip
+.venv/
+*.pyc
+.DS_Store

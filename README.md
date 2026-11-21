@@ -14,21 +14,73 @@ Use these filenames when saving the downloaded Python files.
 
 ## Setup (macOS)
 
-Open Terminal in the project folder. Python 3.9 or newer is required.
+## Coding Assignment 3
 
-Create a virtual environment once:
+The router listens on port 8000 and forwards requests to the backend that owns each key. It uses SHA-256 and a consistent hash ring with 128 virtual nodes per backend. Each backend runs its own copy of `server.py` with a separate JSON snapshot and log.
 
-```
-python3 -m venv .venv
-```
+### Run the system
 
-Install the benchmark's required package:
+From the project folder, install the benchmark dependency:
 
-```
-.venv/bin/python -m pip install requests
+```sh
+python -m pip install requests
 ```
 
-You do not need to activate the environment when using `.venv/bin/python` directly. The server itself needs no extra packages.
+Free port 8000 by stopping any earlier local server or Docker container using it. Start each backend command in its own terminal:
+
+```sh
+python server.py --host 127.0.0.1 --port 8001 --data data/hw3-3/store1.json --log logs/hw3-3/store1.log
+python server.py --host 127.0.0.1 --port 8002 --data data/hw3-3/store2.json --log logs/hw3-3/store2.log
+python server.py --host 127.0.0.1 --port 8003 --data data/hw3-3/store3.json --log logs/hw3-3/store3.log
+```
+
+Once the backends are listening, start the router in a separate terminal:
+
+```sh
+python router.py --backends 8001 8002 8003
+```
+
+### Benchmark one, two, and three backends
+
+Start only the backend ports listed for each run. In both paths in each server command, replace `hw3-3` with the directory for that run. Use fresh snapshot files for each configuration.
+
+| Backends | Server ports | Run directory | Router command |
+|---:|---|---|---|
+| 1 | 8001 | `hw3-1` | `python router.py --backends 8001` |
+| 2 | 8001, 8002 | `hw3-2` | `python router.py --backends 8001 8002` |
+| 3 | 8001, 8002, 8003 | `hw3-3` | `python router.py --backends 8001 8002 8003` |
+
+With the router and backends running, run `python kv_bench.py` in a separate terminal. It uses three client threads to write 300 keys and verify all 300 values. Both phases should report `ok=300 mismatch=0 error=0`. Stop the router and backends with Ctrl+C before switching configurations.
+
+| Backends | PUT (ops/s) | GET (ops/s) | Overall (ops/s) |
+|---:|---:|---:|---:|
+| 1 | 97.2 | 217.2 | 134.3 |
+| 2 | 119.9 | 229.2 | 157.4 |
+| 3 | 147.3 | 271.0 | 190.9 |
+
+In the three-backend run, ports 8001, 8002, and 8003 stored 104, 90, and 106 keys, respectively.
+
+### Test a planned change from two backends to three
+
+1. Run the two-backend configuration with `data/hw3-2/store1.json` and `data/hw3-2/store2.json`. Run `python kv_bench.py set` to write the keys.
+2. Start a third backend with a fresh snapshot path:
+
+   ```sh
+   python server.py --host 127.0.0.1 --port 8003 --data data/hw3-migration/store3.json --log logs/hw3-migration/store3.log
+   ```
+
+3. Stop the router and keep the three backends running. Pause any direct writes to the backends, then run:
+
+   ```sh
+   python rebalance.py --old 8001 8002 --new 8001 8002 8003 --snapshot 8001=data/hw3-2/store1.json 8002=data/hw3-2/store2.json 8003=data/hw3-migration/store3.json
+   ```
+
+4. After `Rebalance complete` appears, restart the router with `python router.py --backends 8001 8002 8003`.
+5. Run `python kv_bench.py get`. Expect `GET: ok=300 mismatch=0 error=0`. This checks the values written before the change.
+
+The router is briefly unavailable during planned migration. Recovering values after an unexpected backend failure would require a replica or backup.
+
+
 
 ## Run with Docker
 
